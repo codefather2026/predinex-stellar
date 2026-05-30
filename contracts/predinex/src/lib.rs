@@ -10,6 +10,7 @@ mod multi_user_tests;
 mod pause_tests;
 mod protocol_fee_tests;
 mod test;
+mod validation_prop_tests;
 
 // ── Issue #175: Event schema versioning ──────────────────────────────────────
 //
