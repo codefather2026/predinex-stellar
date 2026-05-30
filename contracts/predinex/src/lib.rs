@@ -96,6 +96,8 @@ pub enum DataKey {
     RateLimitWindowSecs,
     /// Per-wallet rate-limit usage state.
     WalletRateLimit(Address),
+    /// #350 — Whether the contract is paused for non-admin operations.
+    Paused,
 }
 
 // #189 — TTL bump policy for persistent storage entries.
@@ -207,6 +209,8 @@ pub enum ContractError {
     InvalidRateLimitConfig = 48,
     /// Wallet exceeded allowed request rate.
     RateLimitExceeded = 49,
+    /// #350 — Operation blocked because contract is paused.
+    ContractPaused = 50,
 }
 
 /// #176 — Settlement source tag indicating who initiated pool settlement.
@@ -507,6 +511,32 @@ pub struct SettlePoolEvent {
     pub fee_amount: i128,
     /// Whether the caller was the pool creator or a delegated operator.
     pub source: SettlementSource,
+}
+
+/// #351 — Result of a single pool settlement attempt in a batch call.
+#[derive(Clone)]
+#[contracttype]
+pub struct SettleResult {
+    pub pool_id: u32,
+    pub success: bool,
+}
+
+/// #351 — Settlement request for a single pool in a batch call.
+#[derive(Clone)]
+#[contracttype]
+pub struct PoolSettleRequest {
+    pub pool_id: u32,
+    pub winning_outcome: u32,
+}
+
+/// #356 — Event payload emitted alongside `place_bet` when a referrer is present.
+#[derive(Clone)]
+#[contracttype]
+pub struct ReferralBetEvent {
+    pub referrer: Address,
+    pub pool_id: u32,
+    pub outcome: u32,
+    pub amount: i128,
 }
 
 /// #194 — Per-pool result returned by `claim_all_winnings`.
@@ -1102,8 +1132,11 @@ impl PredinexContract {
         pool_id: u32,
         outcome: u32,
         amount: i128,
+        referrer: Option<Address>,
     ) -> Result<(), ContractError> {
         user.require_auth();
+
+        Self::require_not_paused(&env)?;
 
         if amount <= 0 {
             return Err(ContractError::InvalidBetAmount);
@@ -1302,7 +1335,7 @@ impl PredinexContract {
                 Symbol::new(&env, "place_bet"),
                 event_version(&env),
                 pool_id,
-                user,
+                user.clone(),
             ),
             BetEvent {
                 outcome,
@@ -1311,6 +1344,23 @@ impl PredinexContract {
                 total_no,
             },
         );
+
+        // #356 — emit referral_bet event alongside place_bet when referrer present.
+        if let Some(ref_referrer) = referrer {
+            env.events().publish(
+                (
+                    Symbol::new(&env, "referral_bet"),
+                    event_version(&env),
+                    pool_id,
+                ),
+                ReferralBetEvent {
+                    referrer: ref_referrer,
+                    pool_id,
+                    outcome,
+                    amount,
+                },
+            );
+        }
 
         let large_pool_threshold: i128 = env
             .storage()
@@ -1450,13 +1500,15 @@ impl PredinexContract {
             .get(&DataKey::DelegatedSettler(pool_id))
     }
 
-    pub fn settle_pool(
-        env: Env,
-        caller: Address,
+    /// Internal settlement logic shared by `settle_pool` and `settle_pools`.
+    /// Does NOT call `require_auth` — the caller must authenticate before calling.
+    fn settle_single_pool(
+        env: &Env,
+        caller: &Address,
         pool_id: u32,
         winning_outcome: u32,
     ) -> Result<(), ContractError> {
-        caller.require_auth();
+        Self::require_not_paused(env)?;
 
         let mut pool = env
             .storage()
@@ -1471,11 +1523,11 @@ impl PredinexContract {
 
         // #176 — determine the settlement source before the auth check so we
         // can record it on-chain and in the event without a second read.
-        let source = if caller == pool.creator {
+        let source = if caller == &pool.creator {
             SettlementSource::Creator
         } else if delegated_settler
             .as_ref()
-            .map(|s| s == &caller)
+            .map(|s| s == caller)
             .unwrap_or(false)
         {
             SettlementSource::Operator
@@ -1542,12 +1594,12 @@ impl PredinexContract {
         // #176 — emit enriched settlement event including source metadata.
         env.events().publish(
             (
-                Symbol::new(&env, "settle_pool"),
-                event_version(&env),
+                Symbol::new(env, "settle_pool"),
+                event_version(env),
                 pool_id,
             ),
             SettlePoolEvent {
-                caller,
+                caller: caller.clone(),
                 winning_outcome,
                 winning_side_total,
                 total_pool_volume,
@@ -1556,6 +1608,49 @@ impl PredinexContract {
             },
         );
         Ok(())
+    }
+
+    pub fn settle_pool(
+        env: Env,
+        caller: Address,
+        pool_id: u32,
+        winning_outcome: u32,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        Self::settle_single_pool(&env, &caller, pool_id, winning_outcome)
+    }
+
+    /// #351 — Batch settle multiple expired pools in a single call.
+    ///
+    /// Accepts up to 20 `(pool_id, winning_outcome)` pairs. Each pool is
+    /// validated independently — a failure for one pool does not block others.
+    /// Only callers authorized to settle each respective pool may do so.
+    ///
+    /// Returns a `Vec<SettleResult>` with one entry per requested pool
+    /// indicating whether settlement succeeded.
+    pub fn settle_pools(
+        env: Env,
+        caller: Address,
+        pools: Vec<PoolSettleRequest>,
+    ) -> Vec<SettleResult> {
+        caller.require_auth();
+        let mut results = Vec::new(&env);
+        let cap = if pools.len() > 20 { 20 } else { pools.len() };
+        for i in 0..cap {
+            let req = pools.get(i).unwrap();
+            let success = Self::settle_single_pool(
+                &env,
+                &caller,
+                req.pool_id,
+                req.winning_outcome,
+            )
+            .is_ok();
+            results.push_back(SettleResult {
+                pool_id: req.pool_id,
+                success,
+            });
+        }
+        results
     }
 
     /// #176 — Return the settlement source for a pool, or `None` if not yet settled.
@@ -1570,6 +1665,7 @@ impl PredinexContract {
     /// recover their original stakes in full.
     pub fn void_pool(env: Env, caller: Address, pool_id: u32) -> Result<(), ContractError> {
         caller.require_auth();
+        Self::require_not_paused(&env)?;
 
         let mut pool = env
             .storage()
@@ -1610,6 +1706,7 @@ impl PredinexContract {
     /// The bet entry is removed after the refund to prevent double-claims.
     pub fn claim_refund(env: Env, user: Address, pool_id: u32) -> Result<i128, ContractError> {
         user.require_auth();
+        Self::require_not_paused(&env)?;
 
         let pool = env
             .storage()
@@ -1696,6 +1793,7 @@ impl PredinexContract {
     /// See `web/docs/PAYOUT_ROUNDING.md` for indexer / UI guidance.
     pub fn claim_winnings(env: Env, user: Address, pool_id: u32) -> Result<i128, ContractError> {
         user.require_auth();
+        Self::require_not_paused(&env)?;
 
         let pool = env
             .storage()
@@ -2488,6 +2586,18 @@ impl PredinexContract {
             .unwrap_or(1)
     }
 
+    fn require_not_paused(env: &Env) -> Result<(), ContractError> {
+        if env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            return Err(ContractError::ContractPaused);
+        }
+        Ok(())
+    }
+
     fn require_freeze_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
         let freeze_admin: Address = env
             .storage()
@@ -2498,6 +2608,40 @@ impl PredinexContract {
             return Err(ContractError::Unauthorized);
         }
         Ok(())
+    }
+
+    /// #350 — Pause or unpause the contract. Only the treasury recipient may call this.
+    /// While paused, sensitive operations (place_bet, settle_pool, claim_winnings,
+    /// claim_refund, void_pool) are blocked. Treasury withdrawals and admin functions
+    /// remain operational.
+    pub fn set_paused(env: Env, caller: Address, paused: bool) -> Result<(), ContractError> {
+        caller.require_auth();
+        let treasury_recipient: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TreasuryRecipient)
+            .ok_or(ContractError::NotInitialized)?;
+        if caller != treasury_recipient {
+            return Err(ContractError::Unauthorized);
+        }
+        env.storage().persistent().set(&DataKey::Paused, &paused);
+
+        let event_name = if paused {
+            Symbol::new(&env, "contract_paused")
+        } else {
+            Symbol::new(&env, "contract_unpaused")
+        };
+        env.events()
+            .publish((event_name, event_version(&env)), caller);
+        Ok(())
+    }
+
+    /// Return whether the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .persistent()
+            .get::<_, bool>(&DataKey::Paused)
+            .unwrap_or(false)
     }
 
     /// Return the user's bet record and extend its TTL on every read. (#189)

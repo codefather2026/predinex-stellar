@@ -135,8 +135,40 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
         );
     }
 
+    const totalPool = pool.totalA + pool.totalB;
+    const oddsA = totalPool > 0 ? ((pool.totalA / totalPool) * 100).toFixed(1) : "50.0";
+    const oddsB = totalPool > 0 ? ((pool.totalB / totalPool) * 100).toFixed(1) : "50.0";
+
     return (
         <div className="space-y-4">
+            {/* Real-time odds display */}
+            <div className="p-4 bg-muted/30 rounded-lg border border-border/50">
+                <p className="text-sm text-muted-foreground mb-2">Current Odds</p>
+                <div className="flex h-3 rounded-full overflow-hidden mb-2">
+                    <div
+                        className="bg-green-500 transition-all duration-500"
+                        style={{ width: `${oddsA}%` }}
+                    />
+                    <div
+                        className="bg-red-500 transition-all duration-500"
+                        style={{ width: `${oddsB}%` }}
+                    />
+                </div>
+                <div className="flex justify-between text-sm">
+                    <div className="text-green-400">
+                        <span className="font-medium">{pool.outcomeA}</span>
+                        <span className="ml-1 text-muted-foreground">{oddsA}%</span>
+                    </div>
+                    <div className="text-red-400">
+                        <span className="mr-1 text-muted-foreground">{oddsB}%</span>
+                        <span className="font-medium">{pool.outcomeB}</span>
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 text-center">
+                    Total pool: {(totalPool / 10_000_000).toLocaleString()} XLM
+                </p>
+            </div>
+
             <TransactionFeeModal
                 isOpen={!!feePrompt}
                 actionName="Place Bet"

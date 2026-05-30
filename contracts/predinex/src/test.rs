@@ -115,8 +115,8 @@ fn test_large_pool_payouts_with_checked_arithmetic() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &large_amount_a);
-    client.place_bet(&user2, &pool_id, &1, &large_amount_b);
+    client.place_bet(&user1, &pool_id, &0, &large_amount_a, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &large_amount_b, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -164,11 +164,11 @@ fn test_place_bet_rejects_pool_total_overflow() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &huge_amount);
+    client.place_bet(&user1, &pool_id, &0, &huge_amount, &None::<Address>);
 
     // Overflow on the second bet should fail predictably.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.place_bet(&user2, &pool_id, &0, &2);
+        client.place_bet(&user2, &pool_id, &0, &2, &None::<Address>);
     }));
 
     assert!(
@@ -212,7 +212,7 @@ fn test_place_bet() {
         &duration,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     let pool = client.get_pool(&pool_id).unwrap();
     assert_eq!(pool.total_a, 100);
@@ -257,8 +257,8 @@ fn test_settle_and_claim() {
         &duration,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &100);
-    client.place_bet(&user2, &pool_id, &1, &100);
+    client.place_bet(&user1, &pool_id, &0, &100, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &100, &None::<Address>);
 
     // Advance ledger timestamp past the pool expiry so settlement is allowed
     env.ledger().with_mut(|li| {
@@ -311,7 +311,7 @@ fn test_duplicate_claim_rejected() {
         &3600,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     // Advance ledger timestamp past the pool expiry so settlement is allowed
     env.ledger().with_mut(|li| {
@@ -373,7 +373,7 @@ fn test_initialize_succeeds_once() {
     );
 
     // place_bet internally reads DataKey::Token — this proves initialize stored it
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
     let token = token::Client::new(&env, &token_id.address());
     assert_eq!(token.balance(&user), 900);
 }
@@ -440,7 +440,7 @@ fn test_initialize_idempotency_preserves_original_token() {
     );
 
     // This would fail if the token address had been overwritten
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
     let token = token::Client::new(&env, &token_id.address());
     assert_eq!(token.balance(&user), 900);
     assert_eq!(token.balance(&contract_id), 100);
@@ -483,7 +483,7 @@ fn test_settle_pool_before_expiry_rejected() {
         &3600,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     // Ledger timestamp is still 0 (before expiry at 3600) — settlement must fail
     client.settle_pool(&creator, &pool_id, &0);
@@ -518,7 +518,7 @@ fn test_settle_pool_after_expiry_succeeds() {
         &3600,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     // Advance ledger timestamp past expiry
     env.ledger().with_mut(|li| {
@@ -575,7 +575,7 @@ fn test_settle_pool_unauthorized_caller_rejected() {
         &3600,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     // Advance past expiry
     env.ledger().with_mut(|li| {
@@ -616,7 +616,7 @@ fn test_settle_pool_unauthorized_then_authorized_succeeds() {
         &3600,
     );
 
-    client.place_bet(&user, &pool_id, &0, &100);
+    client.place_bet(&user, &pool_id, &0, &100, &None::<Address>);
 
     // Advance past expiry
     env.ledger().with_mut(|li| {
@@ -669,9 +669,9 @@ fn test_get_user_bet_returns_correct_amounts() {
     token_client.mint(&user, &500i128);
 
     // Place bet on outcome A (100 tokens)
-    client.place_bet(&user, &pool_id, &0u32, &100i128);
+    client.place_bet(&user, &pool_id, &0u32, &100i128, &None::<Address>);
     // Place bet on outcome B (200 tokens)
-    client.place_bet(&user, &pool_id, &1u32, &200i128);
+    client.place_bet(&user, &pool_id, &1u32, &200i128, &None::<Address>);
 
     let bet = client
         .get_user_bet(&pool_id, &user)
@@ -794,7 +794,7 @@ fn expire_pool(env: &Env) {
 fn a1_place_bet_outcome_2_is_rejected() {
     let t = setup();
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &2u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &2u32, &100i128, &None::<Address>);
 }
 
 /// A2: outcome == u32::MAX is also out of range and must be rejected.
@@ -803,7 +803,7 @@ fn a1_place_bet_outcome_2_is_rejected() {
 fn a2_place_bet_outcome_max_u32_is_rejected() {
     let t = setup();
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &u32::MAX, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &u32::MAX, &100i128, &None::<Address>);
 }
 
 /// A3: pool state (total_a, total_b) must not change after a rejected bet.
@@ -822,7 +822,7 @@ fn a3_invalid_outcome_does_not_mutate_pool_state() {
 
     // Attempt an invalid bet — must panic
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.place_bet(&t.user, &pool_id, &2u32, &100i128);
+        t.client.place_bet(&t.user, &pool_id, &2u32, &100i128, &None::<Address>);
     }));
     assert!(result.is_err(), "invalid outcome bet must panic");
 
@@ -845,7 +845,7 @@ fn a4_place_bet_outcome_0_is_valid() {
     let pool_id = make_pool(&t);
 
     // Must not panic
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
     assert_eq!(pool.total_a, 100i128, "total_a must reflect outcome-0 bet");
@@ -859,7 +859,7 @@ fn a5_place_bet_outcome_1_is_valid() {
     let pool_id = make_pool(&t);
 
     // Must not panic
-    t.client.place_bet(&t.user, &pool_id, &1u32, &200i128);
+    t.client.place_bet(&t.user, &pool_id, &1u32, &200i128, &None::<Address>);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
     assert_eq!(pool.total_a, 0i128, "total_a must be unchanged");
@@ -976,7 +976,7 @@ fn b6_settle_pool_winning_outcome_1_is_valid() {
 fn c1_place_bet_zero_amount_rejected() {
     let t = setup();
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &0u32, &0i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &0i128, &None::<Address>);
 }
 
 /// C2: place_bet with negative amount must be rejected.
@@ -985,7 +985,7 @@ fn c1_place_bet_zero_amount_rejected() {
 fn c2_place_bet_negative_amount_rejected() {
     let t = setup();
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &0u32, &-100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &-100i128, &None::<Address>);
 }
 
 /// C3: pool state must not change after a rejected bet due to invalid amount.
@@ -1001,7 +1001,7 @@ fn c3_invalid_amount_does_not_mutate_pool_state() {
 
     // Attempt a zero-amount bet — must panic
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.place_bet(&t.user, &pool_id, &0u32, &0i128);
+        t.client.place_bet(&t.user, &pool_id, &0u32, &0i128, &None::<Address>);
     }));
     assert!(result.is_err(), "zero amount bet must panic");
 
@@ -1032,7 +1032,7 @@ fn c4_place_bet_positive_amount_works() {
     let pool_id = make_pool(&t);
 
     // Must not panic
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
     assert_eq!(pool.total_a, 100i128, "total_a must reflect the bet");
@@ -1056,7 +1056,7 @@ fn d1_place_bet_after_expiry_rejected() {
     expire_pool(&t.env);
 
     // Attempt to place bet after expiry — must panic
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 }
 
 /// D2: place_bet exactly at expiry timestamp is rejected (boundary test).
@@ -1072,7 +1072,7 @@ fn d2_place_bet_exactly_at_expiry_rejected() {
     });
 
     // Attempt to place bet exactly at expiry — must panic
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 }
 
 /// D3: no token transfer occurs when betting on expired pool.
@@ -1090,7 +1090,7 @@ fn d3_expired_bet_does_not_transfer_tokens() {
 
     // Attempt bet — must panic
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+        t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
     }));
     assert!(result.is_err(), "bet after expiry must panic");
 
@@ -1114,7 +1114,7 @@ fn d4_place_bet_just_before_expiry_succeeds() {
     });
 
     // Should succeed
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 
     let pool = t.client.get_pool(&pool_id).expect("pool must exist");
     assert_eq!(pool.total_a, 100i128, "bet should be recorded");
@@ -1498,8 +1498,8 @@ fn g3_after_rotation_only_new_recipient_can_withdraw() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &100);
-    client.place_bet(&user2, &pool_id, &1, &100);
+    client.place_bet(&user1, &pool_id, &0, &100, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &100, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -1636,8 +1636,8 @@ fn h1_successful_withdrawal_emits_event() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &100);
-    client.place_bet(&user2, &pool_id, &1, &100);
+    client.place_bet(&user1, &pool_id, &0, &100, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &100, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -1732,8 +1732,8 @@ fn h4_multiple_withdrawals_emit_separate_events() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &100);
-    client.place_bet(&user2, &pool_id, &1, &100);
+    client.place_bet(&user1, &pool_id, &0, &100, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &100, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -1790,8 +1790,8 @@ fn h5_withdrawal_event_includes_caller_and_recipient() {
         &3600,
     );
 
-    client.place_bet(&user1, &pool_id, &0, &100);
-    client.place_bet(&user2, &pool_id, &1, &100);
+    client.place_bet(&user1, &pool_id, &0, &100, &None::<Address>);
+    client.place_bet(&user2, &pool_id, &1, &100, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -1847,8 +1847,8 @@ fn test_settle_pool_event_includes_totals_and_fee() {
     );
 
     // user_a bets 300 on outcome 0, user_b bets 100 on outcome 1
-    client.place_bet(&user_a, &pool_id, &0, &300);
-    client.place_bet(&user_b, &pool_id, &1, &100);
+    client.place_bet(&user_a, &pool_id, &0, &300, &None::<Address>);
+    client.place_bet(&user_b, &pool_id, &1, &100, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -1905,8 +1905,8 @@ fn test_settle_pool_event_outcome_b_totals() {
         &3600,
     );
 
-    client.place_bet(&user_a, &pool_id, &0, &200);
-    client.place_bet(&user_b, &pool_id, &1, &600);
+    client.place_bet(&user_a, &pool_id, &0, &200, &None::<Address>);
+    client.place_bet(&user_b, &pool_id, &1, &600, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -2068,8 +2068,8 @@ fn claim_status_winner_transitions() {
         super::ClaimStatus::NeverBet
     );
 
-    t.client.place_bet(&winner, &pool_id, &0, &300); // outcome A
-    t.client.place_bet(&loser, &pool_id, &1, &200); // outcome B
+    t.client.place_bet(&winner, &pool_id, &0, &300, &None::<Address>); // outcome A
+    t.client.place_bet(&loser, &pool_id, &1, &200, &None::<Address>); // outcome B
 
     // After bet, pool still open: NotEligible (no claim available yet)
     assert_eq!(
@@ -2112,8 +2112,8 @@ fn claim_status_loser_is_not_eligible_not_never_bet() {
     token_admin.mint(&loser, &100);
     token_admin.mint(&winner, &100);
 
-    t.client.place_bet(&loser, &pool_id, &1, &100); // outcome B
-    t.client.place_bet(&winner, &pool_id, &0, &100); // outcome A
+    t.client.place_bet(&loser, &pool_id, &1, &100, &None::<Address>); // outcome B
+    t.client.place_bet(&winner, &pool_id, &0, &100, &None::<Address>); // outcome A
 
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0); // A wins
@@ -2138,7 +2138,7 @@ fn claim_status_cancelled_pool_transitions() {
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
     token_admin.mint(&user, &200);
 
-    t.client.place_bet(&user, &pool_id, &0, &200);
+    t.client.place_bet(&user, &pool_id, &0, &200, &None::<Address>);
     t.client.cancel_pool(&t.admin, &pool_id);
 
     assert_eq!(
@@ -2166,8 +2166,8 @@ fn setup_with_treasury() -> (TestEnv<'static>, u32) {
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
     token_admin.mint(&user2, &1000);
 
-    t.client.place_bet(&t.user, &pool_id, &0, &500);
-    t.client.place_bet(&user2, &pool_id, &1, &500);
+    t.client.place_bet(&t.user, &pool_id, &0, &500, &None::<Address>);
+    t.client.place_bet(&user2, &pool_id, &1, &500, &None::<Address>);
 
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0);
@@ -2246,7 +2246,7 @@ fn i2_cancel_pool_after_first_bet_succeeds() {
     let t = setup();
     let pool_id = make_pool(&t);
 
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
     t.client.cancel_pool(&t.admin, &pool_id);
 
     let pool_after = t
@@ -2291,7 +2291,7 @@ fn i5_place_bet_on_cancelled_pool_rejected() {
     let pool_id = make_pool(&t);
 
     t.client.cancel_pool(&t.admin, &pool_id);
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 }
 
 /// I6: Settling a cancelled pool is rejected.
@@ -2324,8 +2324,8 @@ fn j1_get_user_pools_returns_correct_pools() {
     let pool_c = make_pool(&t);
 
     // User bets in pool_a and pool_c but not pool_b
-    t.client.place_bet(&t.user, &pool_a, &0u32, &100i128);
-    t.client.place_bet(&t.user, &pool_c, &1u32, &200i128);
+    t.client.place_bet(&t.user, &pool_a, &0u32, &100i128, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_c, &1u32, &200i128, &None::<Address>);
 
     let positions = t.client.get_user_pools(&t.user, &pool_a, &3u32);
 
@@ -2354,8 +2354,8 @@ fn j2_get_user_pools_is_ordered_ascending() {
     let pool_a = make_pool(&t);
     let pool_b = make_pool(&t);
 
-    t.client.place_bet(&t.user, &pool_b, &0u32, &50i128);
-    t.client.place_bet(&t.user, &pool_a, &0u32, &50i128);
+    t.client.place_bet(&t.user, &pool_b, &0u32, &50i128, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_a, &0u32, &50i128, &None::<Address>);
 
     let positions = t.client.get_user_pools(&t.user, &pool_a, &2u32);
     assert_eq!(positions.len(), 2);
@@ -2389,8 +2389,8 @@ fn j4_claimed_position_is_not_returned_by_scan() {
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
     token_admin.mint(&loser, &100);
 
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
-    t.client.place_bet(&loser, &pool_id, &1u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
+    t.client.place_bet(&loser, &pool_id, &1u32, &100i128, &None::<Address>);
 
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0u32);
@@ -2468,7 +2468,7 @@ fn k2_pool_and_bet_ttl_extended_on_place_bet() {
     let pool_id = make_pool(&t);
 
     // place_bet calls extend_ttl for both pool and UserBet — verify no panic.
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 
     let pool = t.client.get_pool(&pool_id);
     assert!(pool.is_some());
@@ -2482,7 +2482,7 @@ fn k3_pool_ttl_extended_on_settle() {
     let t = setup();
     let pool_id = make_pool(&t);
 
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
     expire_pool(&t.env);
     // settle_pool calls extend_ttl — verify pool remains readable afterward.
     t.client.settle_pool(&t.admin, &pool_id, &0u32);
@@ -2500,7 +2500,7 @@ fn k4_get_user_bet_extends_ttl_on_read() {
     let t = setup();
     let pool_id = make_pool(&t);
 
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
 
     // get_user_bet calls extend_ttl — verify no panic and correct data returned.
     let bet = t.client.get_user_bet(&pool_id, &t.user);
@@ -2544,7 +2544,7 @@ fn l2_failed_claim_no_bet_leaves_treasury_unchanged() {
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
     token_admin.mint(&user2, &100);
 
-    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128);
+    t.client.place_bet(&t.user, &pool_id, &0u32, &100i128, &None::<Address>);
     expire_pool(&t.env);
     t.client.settle_pool(&t.admin, &pool_id, &0u32);
 
@@ -2596,8 +2596,8 @@ fn l3_loser_claim_leaves_balances_unchanged() {
         &3600,
     );
 
-    client.place_bet(&winner, &pool_id, &0, &300);
-    client.place_bet(&loser, &pool_id, &1, &200);
+    client.place_bet(&winner, &pool_id, &0, &300, &None::<Address>);
+    client.place_bet(&loser, &pool_id, &1, &200, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -2664,8 +2664,8 @@ fn l4_successful_claim_reconciles_treasury_and_balances() {
         &3600,
     );
 
-    client.place_bet(&user_a, &pool_id, &0, &300);
-    client.place_bet(&user_b, &pool_id, &1, &200);
+    client.place_bet(&user_a, &pool_id, &0, &300, &None::<Address>);
+    client.place_bet(&user_b, &pool_id, &1, &200, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -2732,8 +2732,8 @@ fn l5_claim_winnings_emits_claim_event() {
         &3600,
     );
 
-    client.place_bet(&user_a, &pool_id, &0, &300);
-    client.place_bet(&user_b, &pool_id, &1, &200);
+    client.place_bet(&user_a, &pool_id, &0, &300, &None::<Address>);
+    client.place_bet(&user_b, &pool_id, &1, &200, &None::<Address>);
 
     env.ledger().with_mut(|li| {
         li.timestamp = 3601;
@@ -2918,8 +2918,8 @@ fn test_circuit_breaker_rejects_bets_above_max_pool_size() {
     token_admin_client.mint(&user_b, &500);
 
     let pool_id = make_pool(&t);
-    t.client.place_bet(&user_a, &pool_id, &0, &150);
-    t.client.place_bet(&user_b, &pool_id, &1, &60);
+    t.client.place_bet(&user_a, &pool_id, &0, &150, &None::<Address>);
+    t.client.place_bet(&user_b, &pool_id, &1, &60, &None::<Address>);
 }
 
 #[test]
@@ -2935,14 +2935,14 @@ fn test_circuit_breaker_auto_cooling_freezes_then_unlocks() {
     token_admin_client.mint(&user_b, &500);
 
     let pool_id = make_pool(&t);
-    t.client.place_bet(&user_a, &pool_id, &0, &150);
-    t.client.place_bet(&user_b, &pool_id, &1, &50);
+    t.client.place_bet(&user_a, &pool_id, &0, &150, &None::<Address>);
+    t.client.place_bet(&user_b, &pool_id, &1, &50, &None::<Address>);
 
     let frozen_pool = t.client.get_pool(&pool_id).unwrap();
     assert_eq!(frozen_pool.status, PoolStatus::Frozen);
 
     t.env.ledger().with_mut(|li| li.timestamp += 121);
-    t.client.place_bet(&user_a, &pool_id, &0, &10);
+    t.client.place_bet(&user_a, &pool_id, &0, &10, &None::<Address>);
     let reopened_pool = t.client.get_pool(&pool_id).unwrap();
     assert_eq!(reopened_pool.status, PoolStatus::Open);
 }
@@ -2960,15 +2960,15 @@ fn test_circuit_breaker_admin_override_unfreezes_pool() {
     token_admin_client.mint(&user_b, &500);
 
     let pool_id = make_pool(&t);
-    t.client.place_bet(&user_a, &pool_id, &0, &150);
-    t.client.place_bet(&user_b, &pool_id, &1, &50);
+    t.client.place_bet(&user_a, &pool_id, &0, &150, &None::<Address>);
+    t.client.place_bet(&user_b, &pool_id, &1, &50, &None::<Address>);
     assert_eq!(
         t.client.get_pool(&pool_id).unwrap().status,
         PoolStatus::Frozen
     );
 
     t.client.override_pool_cooling(&t.admin, &pool_id);
-    t.client.place_bet(&user_a, &pool_id, &0, &10);
+    t.client.place_bet(&user_a, &pool_id, &0, &10, &None::<Address>);
     assert_eq!(
         t.client.get_pool(&pool_id).unwrap().status,
         PoolStatus::Open
@@ -2982,9 +2982,9 @@ fn test_rate_limit_blocks_wallet_when_threshold_exceeded() {
     t.client.set_rate_limit_config(&t.admin, &2, &60);
 
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &0, &10);
-    t.client.place_bet(&t.user, &pool_id, &1, &10);
-    t.client.place_bet(&t.user, &pool_id, &0, &10);
+    t.client.place_bet(&t.user, &pool_id, &0, &10, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_id, &1, &10, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_id, &0, &10, &None::<Address>);
 }
 
 #[test]
@@ -2993,11 +2993,11 @@ fn test_rate_limit_resets_after_window() {
     t.client.set_rate_limit_config(&t.admin, &2, &60);
 
     let pool_id = make_pool(&t);
-    t.client.place_bet(&t.user, &pool_id, &0, &10);
-    t.client.place_bet(&t.user, &pool_id, &1, &10);
+    t.client.place_bet(&t.user, &pool_id, &0, &10, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_id, &1, &10, &None::<Address>);
 
     t.env.ledger().with_mut(|li| li.timestamp += 61);
-    t.client.place_bet(&t.user, &pool_id, &0, &10);
+    t.client.place_bet(&t.user, &pool_id, &0, &10, &None::<Address>);
 
     let status = t.client.get_wallet_rate_limit_status(&t.user);
     assert_eq!(status.used, 1);
@@ -3010,12 +3010,274 @@ fn test_rate_limit_status_reports_remaining_capacity() {
     t.client.set_rate_limit_config(&t.admin, &3, &120);
     let pool_id = make_pool(&t);
 
-    t.client.place_bet(&t.user, &pool_id, &0, &10);
-    t.client.place_bet(&t.user, &pool_id, &1, &10);
+    t.client.place_bet(&t.user, &pool_id, &0, &10, &None::<Address>);
+    t.client.place_bet(&t.user, &pool_id, &1, &10, &None::<Address>);
 
     let status = t.client.get_wallet_rate_limit_status(&t.user);
     assert_eq!(status.max_bets_per_window, 3);
     assert_eq!(status.window_secs, 120);
     assert_eq!(status.used, 2);
     assert_eq!(status.remaining, 1);
+}
+
+// ============================================================================
+// Issue #350: Emergency pause mechanism
+// ============================================================================
+
+#[test]
+fn test_pause_blocks_place_bet() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.set_paused(&t.admin, &true);
+    assert!(t.client.is_paused());
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+    }));
+    assert!(result.is_err(), "place_bet must be blocked when paused");
+}
+
+#[test]
+fn test_pause_blocks_settle_pool() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+    expire_pool(&t.env);
+
+    t.client.set_paused(&t.admin, &true);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.settle_pool(&t.admin, &pool_id, &0);
+    }));
+    assert!(result.is_err(), "settle_pool must be blocked when paused");
+}
+
+#[test]
+fn test_pause_blocks_claim_winnings() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    let loser = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&loser, &500);
+    t.client.place_bet(&t.user, &pool_id, &0, &300, &None::<Address>);
+    t.client.place_bet(&loser, &pool_id, &1, &200, &None::<Address>);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0);
+
+    t.client.set_paused(&t.admin, &true);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.claim_winnings(&t.user, &pool_id);
+    }));
+    assert!(result.is_err(), "claim_winnings must be blocked when paused");
+}
+
+#[test]
+fn test_pause_blocks_claim_refund() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+    t.client.cancel_pool(&t.admin, &pool_id);
+
+    t.client.set_paused(&t.admin, &true);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.claim_refund(&t.user, &pool_id);
+    }));
+    assert!(result.is_err(), "claim_refund must be blocked when paused");
+}
+
+#[test]
+fn test_pause_blocks_void_pool() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.set_paused(&t.admin, &true);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.void_pool(&t.admin, &pool_id);
+    }));
+    assert!(result.is_err(), "void_pool must be blocked when paused");
+}
+
+#[test]
+fn test_treasury_withdrawal_works_while_paused() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    let user2 = Address::generate(&t.env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&t.env, &t.token);
+    token_admin.mint(&user2, &1000);
+    t.client.place_bet(&t.user, &pool_id, &0, &500, &None::<Address>);
+    t.client.place_bet(&user2, &pool_id, &1, &500, &None::<Address>);
+    expire_pool(&t.env);
+    t.client.settle_pool(&t.admin, &pool_id, &0);
+    t.client.claim_winnings(&t.user, &pool_id);
+
+    let treasury = t.client.get_treasury_balance();
+    assert!(treasury > 0);
+
+    t.client.set_paused(&t.admin, &true);
+
+    // Treasury withdrawal must still work while paused
+    t.client.withdraw_treasury(&t.admin, &treasury);
+    assert_eq!(t.client.get_treasury_balance(), 0);
+}
+
+#[test]
+fn test_set_paused_unauthorized_rejected() {
+    let t = setup();
+    let stranger = Address::generate(&t.env);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.set_paused(&stranger, &true);
+    }));
+    assert!(result.is_err(), "non-treasury must not be able to pause");
+}
+
+#[test]
+fn test_resume_after_unpause() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.set_paused(&t.admin, &true);
+    t.client.set_paused(&t.admin, &false);
+    assert!(!t.client.is_paused());
+
+    // Should succeed after unpause
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+    let pool = t.client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.total_a, 100);
+}
+
+// ============================================================================
+// Issue #351: Batch settlement
+// ============================================================================
+
+#[test]
+fn test_settle_pools_batch_single_pool() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+    expire_pool(&t.env);
+
+    let mut reqs: soroban_sdk::Vec<PoolSettleRequest> = soroban_sdk::Vec::new(&t.env);
+    reqs.push_back(PoolSettleRequest {
+        pool_id,
+        winning_outcome: 0,
+    });
+
+    let results = t.client.settle_pools(&t.admin, &reqs);
+    assert_eq!(results.len(), 1);
+    assert!(results.get(0).unwrap().success);
+    assert_eq!(results.get(0).unwrap().pool_id, pool_id);
+
+    let pool = t.client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.status, PoolStatus::Settled(0));
+}
+
+#[test]
+fn test_settle_pools_batch_partial_failure() {
+    let t = setup();
+    let pool_a = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_a, &0, &100, &None::<Address>);
+    expire_pool(&t.env);
+
+    // Create a pool with a very long duration so it's not yet expired
+    let future_pool_id = t.client.create_pool(
+        &t.admin,
+        &String::from_str(&t.env, "Future pool"),
+        &String::from_str(&t.env, "Desc"),
+        &String::from_str(&t.env, "Yes"),
+        &String::from_str(&t.env, "No"),
+        &999_999u64,
+    );
+
+    let mut reqs: soroban_sdk::Vec<PoolSettleRequest> = soroban_sdk::Vec::new(&t.env);
+    reqs.push_back(PoolSettleRequest {
+        pool_id: pool_a,
+        winning_outcome: 0,
+    });
+    reqs.push_back(PoolSettleRequest {
+        pool_id: future_pool_id,
+        winning_outcome: 0,
+    });
+
+    let results = t.client.settle_pools(&t.admin, &reqs);
+    assert_eq!(results.len(), 2);
+    assert!(results.get(0).unwrap().success, "pool_a must settle");
+    assert!(!results.get(1).unwrap().success, "future pool must fail (not expired)");
+}
+
+#[test]
+fn test_settle_pools_caps_at_twenty() {
+    let t = setup();
+    let mut reqs: soroban_sdk::Vec<PoolSettleRequest> = soroban_sdk::Vec::new(&t.env);
+    for _ in 0..25 {
+        reqs.push_back(PoolSettleRequest {
+            pool_id: 999,
+            winning_outcome: 0,
+        });
+    }
+
+    let results = t.client.settle_pools(&t.admin, &reqs);
+    assert_eq!(results.len(), 20, "must cap at 20 pools");
+}
+
+#[test]
+fn test_settle_pools_unauthorized_rejected() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    expire_pool(&t.env);
+
+    let mut reqs: soroban_sdk::Vec<PoolSettleRequest> = soroban_sdk::Vec::new(&t.env);
+    reqs.push_back(PoolSettleRequest {
+        pool_id,
+        winning_outcome: 0,
+    });
+
+    let stranger = Address::generate(&t.env);
+
+    let results = t.client.settle_pools(&stranger, &reqs);
+    assert_eq!(results.len(), 1, "must return exactly 1 result");
+    assert!(!results.get(0).unwrap().success, "unauthorized caller must fail to settle");
+}
+
+// ============================================================================
+// Issue #356: Optional referral tracking
+// ============================================================================
+
+#[test]
+fn test_place_bet_with_referrer_emits_event() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+    let referrer = Address::generate(&t.env);
+
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &Some(referrer.clone()));
+
+    let events = t.env.events().all();
+    let found = (0..events.len()).any(|i| {
+        let event = events.get(i).unwrap();
+        let topic0: soroban_sdk::Symbol =
+            soroban_sdk::FromVal::from_val(&t.env, &event.1.get(0).unwrap());
+        topic0 == soroban_sdk::Symbol::new(&t.env, "referral_bet")
+    });
+    assert!(found, "referral_bet event must be emitted");
+}
+
+#[test]
+fn test_place_bet_without_referrer_no_referral_event() {
+    let t = setup();
+    let pool_id = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_id, &0, &100, &None::<Address>);
+
+    let events = t.env.events().all();
+    let found = (0..events.len()).any(|i| {
+        let event = events.get(i).unwrap();
+        let topic0: soroban_sdk::Symbol =
+            soroban_sdk::FromVal::from_val(&t.env, &event.1.get(0).unwrap());
+        topic0 == soroban_sdk::Symbol::new(&t.env, "referral_bet")
+    });
+    assert!(!found, "referral_bet event must NOT be emitted without referrer");
 }
