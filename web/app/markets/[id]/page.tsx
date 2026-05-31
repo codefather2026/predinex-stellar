@@ -13,6 +13,8 @@ import type { Pool } from "../../lib/adapters/types";
 import { fetchCurrentBlockHeightLive } from "../../lib/market-utils";
 import { blocksToSeconds } from "../../lib/countdown-utils";
 import CountdownTimer from "../../components/CountdownTimer";
+import DisputeHistoryTimeline from "../../components/DisputeHistoryTimeline";
+import { useDisputeHistory } from "../../lib/hooks/useDisputeHistory";
 import { TrendingUp, Users, Clock, RefreshCw, AlertCircle, Star, StarOff } from "lucide-react";
 import { use } from "react";
 import ShareButton from "../../../components/ShareButton";
@@ -27,6 +29,11 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
     const { activities, refresh: refreshActivity } = useUserActivity(stxAddress ?? undefined, 50);
     const { isFavorite, toggleFavorite } = usePoolFavorites();
     const favorite = isFavorite(poolId);
+    const {
+        events: disputeEvents,
+        isLoading: isLoadingDisputes,
+        error: disputeError,
+    } = useDisputeHistory(Number.isNaN(poolId) ? undefined : poolId);
 
     const [pool, setPool] = useState<Pool | null>(null);
     const [currentBlockHeight, setCurrentBlockHeight] = useState<number | null>(null);
@@ -342,6 +349,12 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
                             />
                         </div>
                     )}
+
+                    <DisputeHistoryTimeline
+                        events={disputeEvents}
+                        isLoading={isLoadingDisputes}
+                        error={disputeError}
+                    />
                 </div>
             </div>
         </main>
