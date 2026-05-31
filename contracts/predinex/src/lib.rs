@@ -2221,6 +2221,92 @@ impl PredinexContract {
         Ok(refund)
     }
 
+    /// #412 — Claim a refund from an expired but unsettled pool.
+    ///
+    /// When a pool's expiry timestamp has passed and the creator never called
+    /// `settle_pool`, user funds would otherwise be stuck. This function lets
+    /// any bettor reclaim their original stake in full — no protocol fee is
+    /// deducted (fees only apply to winning payouts).
+    ///
+    /// # Conditions
+    /// * Pool must exist.
+    /// * Pool status must be `Open` (not already settled, voided, cancelled, etc.).
+    /// * Current ledger timestamp must be strictly greater than `pool.expiry`.
+    /// * Caller must have an active bet record in the pool.
+    ///
+    /// # Post-conditions
+    /// * The user's bet record is removed — double-claim is impossible.
+    /// * The full `total_bet` amount is transferred back to the user.
+    /// * A `claim_expired` event is emitted.
+    ///
+    /// # Errors
+    /// * `PoolNotFound` — pool ID does not exist.
+    /// * `PoolNotOpen` — pool is already settled, voided, cancelled, or frozen.
+    /// * `PoolNotExpired` — pool expiry has not yet passed.
+    /// * `NoBetFound` — caller has no bet in this pool.
+    /// * `NothingToRefund` — bet record exists but total_bet is zero.
+    pub fn claim_expired(env: Env, user: Address, pool_id: u32) -> Result<i128, ContractError> {
+        user.require_auth();
+        Self::require_not_paused(&env)?;
+
+        let pool = env
+            .storage()
+            .persistent()
+            .get::<_, Pool>(&DataKey::Pool(pool_id))
+            .ok_or(ContractError::PoolNotFound)?;
+
+        // Only open (unsettled) pools qualify — any terminal or frozen state is rejected.
+        if pool.status != PoolStatus::Open {
+            return Err(ContractError::PoolNotOpen);
+        }
+
+        // Pool must have actually expired.
+        if env.ledger().timestamp() <= pool.expiry {
+            return Err(ContractError::PoolNotExpired);
+        }
+
+        let user_bet = env
+            .storage()
+            .persistent()
+            .get::<_, UserBet>(&DataKey::UserBet(pool_id, user.clone()))
+            .ok_or(ContractError::NoBetFound)?;
+
+        let refund = user_bet.total_bet;
+        if refund == 0 {
+            return Err(ContractError::NothingToRefund);
+        }
+
+        let token_address = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::Token)
+            .ok_or(ContractError::NotInitialized)?;
+        let token_client = token::Client::new(&env, &token_address);
+
+        // Transfer original stake back — no fee deducted.
+        token_client.transfer(&env.current_contract_address(), &user, &refund);
+
+        // Remove bet record to prevent double-claim.
+        env.storage()
+            .persistent()
+            .remove(&DataKey::UserBet(pool_id, user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::UserOutcomeBets(pool_id, user.clone()));
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "claim_expired"),
+                event_version(&env),
+                pool_id,
+                user,
+            ),
+            refund,
+        );
+
+        Ok(refund)
+    }
+
     /// Claim winnings from a settled pool.
     ///
     /// # Atomicity note (#200)
@@ -3219,6 +3305,39 @@ impl PredinexContract {
         }
 
         pools
+    }
+
+    /// #411 — Return a paginated slice of pools in insertion order.
+    ///
+    /// Callable by anyone (no auth required). Pools are returned in ascending
+    /// pool-ID order (which matches insertion order since IDs are sequential).
+    /// `start` is the 1-based pool ID to begin from; `limit` is capped at 20
+    /// to bound ledger reads. Returns an empty vec when `start >= pool_counter`.
+    pub fn list_pools(env: Env, start: u32, limit: u32) -> Vec<Pool> {
+        let effective_limit = if limit > 20 { 20 } else { limit };
+        let max_id = Self::get_pool_count(env.clone());
+
+        if start >= max_id || effective_limit == 0 {
+            return Vec::new(&env);
+        }
+
+        let end = (start + effective_limit).min(max_id);
+        let mut result = Vec::new(&env);
+        for pool_id in start..end {
+            if let Some(pool) = env
+                .storage()
+                .persistent()
+                .get::<_, Pool>(&DataKey::Pool(pool_id))
+            {
+                env.storage().persistent().extend_ttl(
+                    &DataKey::Pool(pool_id),
+                    POOL_BUMP_THRESHOLD,
+                    POOL_BUMP_TARGET,
+                );
+                result.push_back(pool);
+            }
+        }
+        result
     }
 
     pub fn get_pool_outcomes(env: Env, pool_id: u32) -> Vec<PoolOutcome> {
